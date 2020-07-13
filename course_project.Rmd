@@ -1,0 +1,28 @@
+---
+title: "Course_project"
+author: "Leo Carlsson"
+date: "7/13/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Instructions
+Create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+```{r library, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+
+training <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv") %>% select(-X1)
+testing <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv") %>% select(-X1)
+
+```
+
+## Including Plots
+
+
+
+

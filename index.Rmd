@@ -16,13 +16,66 @@ Create a report describing how you built your model, how you used cross validati
 library(tidyverse)
 library(caret)
 
-training <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv") %>% select(-X1)
-testing <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv") %>% select(-X1)
+training <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+		     na = c("", "NA", "#DIV/0!")) %>% select(-X1)
+testing <- read_csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+		    na = c("", "NA", "#DIV/0!")) %>% select(-X1)
 
 ```
 
-## Including Plots
+## Data Clean and predictor selection
+First, we find the near-zero variance variables, and remove those. Then, using sapply, we find those variables whose share of NAs are over 90 % and remove those. Then we create a validation set and a new training set, so to only use the test-set once.
+```{r}
+nzv <- nzv(training)
+training <- training[,-nzv] %>% select(-c(1:5))
+testing <- testing[,-nzv] %>% select(-c(1:5))
 
+
+na_vars <- sapply(training, function(x) mean(is.na(x))) > 0.90
+training <- training[,na_vars == FALSE]
+testing <- testing[,na_vars == FALSE]
+
+inTrain <- createDataPartition(training$classe,
+		    p = 0.7,
+		    list=FALSE)
+training <- training[inTrain,]
+validation <- training[-inTrain,]
+```
+
+## Model train with Cross Validation
+Since this is a fairly big dataset with 53 remaining variables, it's easiest to parallel process the cross validation. A random forrest model was chosen as a first test model, since it's a strong classifier for multiple outcomes, and has some built in cross-validation settings.  
+```{r}
+library(parallel)
+library(doParallel)
+ncores <- makeCluster(4, setup_strategy = "sequential")
+registerDoParallel(cores=ncores)
+getDoParWorkers()
+
+
+modFit <- train(classe~.,
+		method= "rf",
+		trControl = trainControl(method = "cv", 
+					number = 10, 
+					allowParallel = TRUE, 
+					verboseIter = FALSE),
+		data = training)
+stopCluster(ncores)
+modFit
+```
+With a 0.9927209 Accuracy from cross validation, no other model was deemed to needed testing, since this is near perfect results. The out of sample accuracy is deemed to also be around 0.99 %, since a ten fold cross validation was used to test it.
+
+## Get Metrics
+Applied to the validation set, an even better result was achived, with an accuracy of 1, meaning that all results were correctly classified. 
+```{r}
+confusionMatrix(predict(modFit, validation), as.factor(validation$classe))
+```
+
+
+## Apply to quiz
+```{r}
+predict(modFit, testing)
+```
+Giving 100 % correct rate. 
 
 
 

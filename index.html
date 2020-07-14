@@ -375,11 +375,125 @@ summary {
 <pre class="r"><code>library(tidyverse)
 library(caret)
 
-training &lt;- read_csv(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;) %&gt;% select(-X1)
-testing &lt;- read_csv(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;) %&gt;% select(-X1)</code></pre>
+training &lt;- read_csv(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv&quot;,
+             na = c(&quot;&quot;, &quot;NA&quot;, &quot;#DIV/0!&quot;)) %&gt;% select(-X1)
+testing &lt;- read_csv(&quot;https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv&quot;,
+            na = c(&quot;&quot;, &quot;NA&quot;, &quot;#DIV/0!&quot;)) %&gt;% select(-X1)</code></pre>
 </div>
-<div id="including-plots" class="section level2">
-<h2>Including Plots</h2>
+<div id="data-clean-and-predictor-selection" class="section level2">
+<h2>Data Clean and predictor selection</h2>
+<p>First, we find the near-zero variance variables, and remove those. Then, using sapply, we find those variables whose share of NAs are over 90 % and remove those. Then we create a validation set and a new training set, so to only use the test-set once.</p>
+<pre class="r"><code>nzv &lt;- nzv(training)
+training &lt;- training[,-nzv] %&gt;% select(-c(1:5))
+testing &lt;- testing[,-nzv] %&gt;% select(-c(1:5))
+
+
+na_vars &lt;- sapply(training, function(x) mean(is.na(x))) &gt; 0.90
+training &lt;- training[,na_vars == FALSE]
+testing &lt;- testing[,na_vars == FALSE]
+
+inTrain &lt;- createDataPartition(training$classe,
+            p = 0.7,
+            list=FALSE)
+training &lt;- training[inTrain,]</code></pre>
+<pre><code>## Warning: The `i` argument of ``[`()` can&#39;t be a matrix as of tibble 3.0.0.
+## Convert to a vector.
+## This warning is displayed once every 8 hours.
+## Call `lifecycle::last_warnings()` to see where this warning was generated.</code></pre>
+<pre class="r"><code>validation &lt;- training[-inTrain,]</code></pre>
+<pre><code>## Warning: The `i` argument of ``[.tbl_df`()` must lie in [-rows, 0] if negative, as of tibble 3.0.0.
+## Use `NA_integer_` as row index to obtain a row full of `NA` values.
+## This warning is displayed once every 8 hours.
+## Call `lifecycle::last_warnings()` to see where this warning was generated.</code></pre>
+</div>
+<div id="model-train-with-cross-validation" class="section level2">
+<h2>Model train with Cross Validation</h2>
+<p>Since this is a fairly big dataset with 53 remaining variables, it’s easiest to parallel process the cross validation. A random forrest model was chosen as a first test model, since it’s a strong classifier for multiple outcomes, and has some built in cross-validation settings.</p>
+<pre class="r"><code>library(parallel)
+library(doParallel)</code></pre>
+<pre><code>## Loading required package: foreach</code></pre>
+<pre><code>## 
+## Attaching package: &#39;foreach&#39;</code></pre>
+<pre><code>## The following objects are masked from &#39;package:purrr&#39;:
+## 
+##     accumulate, when</code></pre>
+<pre><code>## Loading required package: iterators</code></pre>
+<pre class="r"><code>ncores &lt;- makeCluster(4, setup_strategy = &quot;sequential&quot;)
+registerDoParallel(cores=ncores)
+getDoParWorkers()</code></pre>
+<pre><code>## [1] 4</code></pre>
+<pre class="r"><code>modFit &lt;- train(classe~.,
+        method= &quot;rf&quot;,
+        trControl = trainControl(method = &quot;cv&quot;, 
+                    number = 10, 
+                    allowParallel = TRUE, 
+                    verboseIter = FALSE),
+        data = training)
+stopCluster(ncores)
+modFit</code></pre>
+<pre><code>## Random Forest 
+## 
+## 13737 samples
+##    52 predictor
+##     5 classes: &#39;A&#39;, &#39;B&#39;, &#39;C&#39;, &#39;D&#39;, &#39;E&#39; 
+## 
+## No pre-processing
+## Resampling: Cross-Validated (10 fold) 
+## Summary of sample sizes: 12363, 12362, 12364, 12365, 12362, 12364, ... 
+## Resampling results across tuning parameters:
+## 
+##   mtry  Accuracy   Kappa    
+##    2    0.9925741  0.9906061
+##   27    0.9917746  0.9895948
+##   52    0.9852947  0.9813970
+## 
+## Accuracy was used to select the optimal model using the largest value.
+## The final value used for the model was mtry = 2.</code></pre>
+<p>With a 0.9927209 Accuracy from cross validation, no other model was deemed to needed testing, since this is near perfect results. The out of sample accuracy is deemed to also be around 0.99 %, since a ten fold cross validation was used to test it.</p>
+</div>
+<div id="get-metrics" class="section level2">
+<h2>Get Metrics</h2>
+<p>Applied to the validation set, an even better result was achived, with an accuracy of 1, meaning that all results were correctly classified.</p>
+<pre class="r"><code>confusionMatrix(predict(modFit, validation), as.factor(validation$classe))</code></pre>
+<pre><code>## Confusion Matrix and Statistics
+## 
+##           Reference
+## Prediction    A    B    C    D    E
+##          A 1180    0    0    0    0
+##          B    0  780    0    0    0
+##          C    0    0  724    0    0
+##          D    0    0    0  687    0
+##          E    0    0    0    0  765
+## 
+## Overall Statistics
+##                                      
+##                Accuracy : 1          
+##                  95% CI : (0.9991, 1)
+##     No Information Rate : 0.2853     
+##     P-Value [Acc &gt; NIR] : &lt; 2.2e-16  
+##                                      
+##                   Kappa : 1          
+##                                      
+##  Mcnemar&#39;s Test P-Value : NA         
+## 
+## Statistics by Class:
+## 
+##                      Class: A Class: B Class: C Class: D Class: E
+## Sensitivity            1.0000   1.0000    1.000   1.0000    1.000
+## Specificity            1.0000   1.0000    1.000   1.0000    1.000
+## Pos Pred Value         1.0000   1.0000    1.000   1.0000    1.000
+## Neg Pred Value         1.0000   1.0000    1.000   1.0000    1.000
+## Prevalence             0.2853   0.1886    0.175   0.1661    0.185
+## Detection Rate         0.2853   0.1886    0.175   0.1661    0.185
+## Detection Prevalence   0.2853   0.1886    0.175   0.1661    0.185
+## Balanced Accuracy      1.0000   1.0000    1.000   1.0000    1.000</code></pre>
+</div>
+<div id="apply-to-quiz" class="section level2">
+<h2>Apply to quiz</h2>
+<pre class="r"><code>predict(modFit, testing)</code></pre>
+<pre><code>##  [1] B A B A A E D B A A B C B A E E A B B B
+## Levels: A B C D E</code></pre>
+<p>Giving 100 % correct rate.</p>
 </div>
 
 
